@@ -5,7 +5,7 @@
    s.summary       = 'BlocRecord ORM'
    s.description   = 'An ActiveRecord-esque ORM adaptor'
    s.authors       = ['Diane Gayden']
-   s.email         = 'dianegayden@gmail.com'
+   s.email         = 'MyBunny@gmail.com'
    s.files         = Dir['lib/**/*.rb']
    s.require_paths = ["lib"]
    s.homepage      =
