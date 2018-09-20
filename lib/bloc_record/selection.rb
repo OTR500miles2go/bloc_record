@@ -25,12 +25,12 @@ module Selection
   end
 
   def find_by(attribute, value)
-    rows = connection.execute <<-SQL
+    row = connection.get_first_row <<-SQL
       SELECT #{columns.join ","} FROM #{table}
-      WHERE #{attribute} = #{BlocRecord::Utility.sql_strings(value)};
+      WHERE #{attributes} = #{BlocRecord::Utility.sql_strings(value)};
     SQL
 
-    rows_to_array(rows)
+    rows_to_array(row)
   end
 
   def take(num=1)
@@ -45,7 +45,7 @@ module Selection
     else
       take_one
     end
-  end  
+  end
 
   def take_one
     row = connection.get_first_row <<-SQL
@@ -83,6 +83,38 @@ module Selection
     rows_to_array(rows)
   end
 
+  def method_missing(m, *args, &block)
+    s = m.split('_')[2, m.length - 1].join("_").to_sym
+    find_by(s, args)
+  end
+
+  def find_each(options = {})
+    start = options.start || 0
+    batch_size = options.batch_size || 0
+
+    row = connection.get_first_row <<-SQL
+      SELECT #{columns.join ","} FROM #{table}
+      LIMIT #{batch_size} #{start};
+    SQL
+
+    row.each do |row|
+      yield(rows_to_array(row))
+    end
+  end
+
+  def find_in_batches(options = {})
+    start = options.start || 0
+    batch_size = options.batch_size || 0
+
+    rows = connection.execute <<-SQL
+      SELECT #{columns.join ","} FROM #{table}
+      LIMIT #{batch_size} #{start};
+    SQL
+
+    arr = rows_to_array(rows)
+    yield(arr)
+  end
+
   private
   def init_object_from_row(row)
     if row
@@ -92,6 +124,6 @@ module Selection
   end
 
   def rows_to_array(rows)
-    rows.map { |row| new(Hash[columns.zip(row)]) }
-  end  
+    rows.map { |row| new(Hash[columns.zip(row)])}
+  end
 end
