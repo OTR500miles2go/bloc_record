@@ -3,6 +3,7 @@ require 'bloc_record/schema'
 require 'bloc_record/persistence'
 require 'bloc_record/selection'
 require 'bloc_record/connection'
+require 'bloc_record/validation'
 
 module BlocRecord
   class Base
@@ -10,6 +11,7 @@ module BlocRecord
     extend Selection
     extend Schema
     extend Connection
+    extend Validation
   
     def initialize(options={})
       options = BlocRecord::Utility.convert_keys(options)

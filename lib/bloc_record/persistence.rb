@@ -1,5 +1,6 @@
 require 'sqlite3'
 require 'bloc_record/schema'
+require 'bloc_record/validation'
 
 module Persistence
 
@@ -35,14 +36,18 @@ module Persistence
       attrs.delete "id"
       vals = attributes.map { |key| BlocRecord::Utility.sql_strings(attrs[key]) }
 
-      connection.execute <<-SQL
-        INSERT INTO #{table} (#{attributes.join ","})
-        VALUES (#{vals.join ","});
-      SQL
+      if validate_input(vals)
+        connection.execute <<-SQL
+          INSERT INTO #{table} (#{attributes.join ","})
+          VALUES (#{vals.join ","});
+        SQL
 
-      data = Hash[attributes.zip attrs.values]
-      data["id"] = connection.execute("SELECT last_insert_rowid();")[0][0]
-      new(data)
+        data = Hash[attributes.zip attrs.values]
+        data["id"] = connection.execute("SELECT last_insert_rowid();")[0][0]
+        new(data)
+      else
+        puts "\n#{attrs}:\n\t---One or more values are not valid. "
+      end
     end
   end
 
