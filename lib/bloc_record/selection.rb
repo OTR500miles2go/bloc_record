@@ -107,11 +107,18 @@ module Selection
   end 
   
   def order(*args)
-    if args.count > 1
-      order = args.join(",")
-    else
-      order = args.first.to_s
+    orderArray = []
+    args.each do |arg|
+      case arg
+      when String
+        orderArray << arg
+      when Symbol
+        orderArray << arg.to_s
+      when Hash
+        orderArray << arg.map{|key, value| "#{key} #{value}"}
+      end
     end
+    order = orderArray.join(",")
 
     rows = connection.execute <<-SQL
       SELECT * FROM #{table}
@@ -137,9 +144,16 @@ module Selection
           SELECT * FROM #{table}
           INNER JOIN #{args.first} ON #{args.first}.#{table}_id = #{table}.id
         SQL
+      when Hash
+        key = args.first.keys[0]
+        value = args.first.values[0]
+        rows = connection <<-SQL
+          SELECT * FROM
+          INNER JOIN #{key} ON #{key}.#{table}_id = #{table}.id
+          INNER JOIN #{value} ON #{value}.#{key}_id = #{key}.id
+        SQL
       end
     end
-
     rows_to_array(rows)
   end
 
