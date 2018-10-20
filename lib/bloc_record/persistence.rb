@@ -28,6 +28,14 @@ module Persistence
 
     true
   end
+
+  def update_attribute(attribute, value)
+    self.class.update(self.id, { attribute => value })
+  end 
+
+  def update_attributes(updates)
+    self.class.update(self.id, updates)
+  end    
     
   module ClassMethods
     def create(attrs)
@@ -44,6 +52,33 @@ module Persistence
       data["id"] = connection.execute("SELECT last_insert_rowid();")[0][0]
       new(data)
     end
-  end
 
+    def update(ids, updates)
+      # Convert non-id parameters to an array
+      updates = BlocRecord::Utility.convert_keys(updates)
+      updates.delete "id"
+      # Convert updates to an array of strings
+      updates_array = updates.map { |key, value| "#{key}=#{BlocRecord::Utility.sql_strings(value)}" }
+
+      if ids.class == Fixnum
+        where_clause = "WHERE id = #{ids};"
+      elsif ids.class == Array
+        where_clause = ids.empty? ? ";" : "WHERE id IN (#{ids.join(",")});"
+      else
+        where_clause = ";"
+      end
+
+      # Build SQL statement to update DB
+      connection.execute <<-SQL
+        UPDATE #{table}
+        SET #{updates_array * ","} #{where_clause}
+      SQL
+
+      true
+    end
+
+    def update_all(updates)
+      update(nil, updates)
+    end  
+  end
 end
