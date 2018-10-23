@@ -2,7 +2,6 @@ require 'sqlite3'
 require 'bloc_record/schema'
 
 module Persistence
-
   def self.included(base)
     base.extend(ClassMethods)
   end
@@ -10,36 +9,35 @@ module Persistence
   def save
     self.save! rescue false
   end
-    
+
   def save!
     unless self.id
       self.id = self.class.create(BlocRecord::Utility.instance_variables_to_hash(self)).id
       BlocRecord::Utility.reload_obj(self)
       return true
     end
-    
-    fields = self.class.attributes.map { |col| "#{col}=#{BlocRecord::Utility.sql_strings(self.instance_variable_get("@#{col}"))}" }.join(",")
 
+    fields = self.class.attributes.map { |col| "#{col}=#{BlocRecord::Utility.sql_strings(self.instance_variable_get("@#{col}"))}" }.join(",")
+    
     self.class.connection.execute <<-SQL
       UPDATE #{self.class.table}
       SET #{fields}
       WHERE id = #{self.id};
     SQL
-
     true
   end
 
   def update_attribute(attribute, value)
     self.class.update(self.id, { attribute => value })
-  end 
+  end
 
   def update_attributes(updates)
     self.class.update(self.id, updates)
-  end    
-    
+  end
+
   def destroy
     self.class.destroy(self.id)
-  end 
+  end
 
   module ClassMethods
     def create(attrs)
@@ -58,10 +56,20 @@ module Persistence
     end
 
     def update(ids, updates)
-      # Convert non-id parameters to an array
+      if updates.is_a? Array
+        count = 0
+        while count < ids.length
+          each_update(ids[count], updates[count])
+          count += 1
+        end
+      else
+        each_update(ids, updates)
+      end
+    end
+
+    def each_update(ids, updates)
       updates = BlocRecord::Utility.convert_keys(updates)
       updates.delete "id"
-      # Convert updates to an array of strings
       updates_array = updates.map { |key, value| "#{key}=#{BlocRecord::Utility.sql_strings(value)}" }
 
       if ids.class == Fixnum
@@ -72,18 +80,16 @@ module Persistence
         where_clause = ";"
       end
 
-      # Build SQL statement to update DB
       connection.execute <<-SQL
         UPDATE #{table}
         SET #{updates_array * ","} #{where_clause}
       SQL
-
       true
     end
 
     def update_all(updates)
       update(nil, updates)
-    end  
+    end
 
     def destroy(*id)
       if id.length > 1
@@ -93,28 +99,37 @@ module Persistence
       end
 
       connection.execute <<-SQL
-         DELETE FROM #{table} #{where_clause}
+        DELETE FROM #{table} #{where_clause}
       SQL
-
       true
-    end    
+    end
 
-    def destroy_all(conditions_hash=nil)
-      if conditions_hash && !conditions_hash.empty?
-        conditions_hash = BlocRecord::Utility.convert_keys(conditions_hash)
-        conditions = conditions_hash.map {|key, value| "#{key}=#{BlocRecord::Utility.sql_strings(value)}"}.join(" and ")
+    def destroy_all(*args)
+      if args.count > 1
+        conditions = args.shift
+        params = args
+      else
+        case args.first
+        when String
+          conditions = args.first
+        when Hash
+          conditions_hash = BlocRecord::Utility.convert_keys(args.first)
+          conditions = conditions_hash.map {|key, value| "#{key}=#{BlocRecord::Utility.sql_strings(value)}"}.join(" and ")
+        end
+      end
 
-        connection.execute <<-SQL
+      if conditions
+        sql = <<-SQL
           DELETE FROM #{table}
           WHERE #{conditions};
         SQL
       else
-        connection.execute <<-SQL
-          DELETE FROM #{table}
+        sql = <<-SQL
+          DELETE FROM #{table};
         SQL
       end
-
+      rows = connection.execute(sql, params)
       true
-    end    
+    end
   end
 end
