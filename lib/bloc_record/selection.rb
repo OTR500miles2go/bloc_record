@@ -2,7 +2,6 @@ require 'sqlite3'
 
 module Selection
   def find(*ids)
-
     if ids.length == 1
       find_one(ids.first)
     else
@@ -16,6 +15,7 @@ module Selection
   end
 
   def find_one(id)
+    raise ArgumentError, 'ID must be a positive integer.' unless id.is_a?(Integer) && id >= 0
     row = connection.get_first_row <<-SQL
       SELECT #{columns.join ","} FROM #{table}
       WHERE id = #{id};
@@ -25,15 +25,18 @@ module Selection
   end
 
   def find_by(attribute, value)
-    rows = connection.execute <<-SQL
+    raise ArgumentError, "`#{attribute}` is not a column in this table." unless columns.include?(attribute)
+
+    row = connection.get_first_row <<-SQL
       SELECT #{columns.join ","} FROM #{table}
       WHERE #{attribute} = #{BlocRecord::Utility.sql_strings(value)};
     SQL
 
-    rows_to_array(rows)
+    init_object_from_row(row)
   end
 
   def take(num=1)
+    raise ArgumentError, 'Must be an Integer.' unless num.is_a?(Integer)
     if num > 1
       rows = connection.execute <<-SQL
         SELECT #{columns.join ","} FROM #{table}
@@ -45,7 +48,7 @@ module Selection
     else
       take_one
     end
-  end  
+  end
 
   def take_one
     row = connection.get_first_row <<-SQL
@@ -83,6 +86,26 @@ module Selection
     rows_to_array(rows)
   end
 
+  def find_each(options)
+    rows = connection.execute <<-SQL
+      SELECT #{column.join(",")} FROM #{table}
+      LIMIT #{options[:batch_size]} OFFSET #{options[:start]}
+    SQL
+
+    for row in rows_to_array(rows)
+      yield row
+    end
+  end
+
+  def find_in_batches(options)
+    rows = connection.execute <<-SQL
+      SELECT #{columns.join(",")} FROM #{table}
+      LIMIT #{options[:batch_size]} OFFSET #{options[:start]}
+    SQL
+
+    yield rows_to_array(rows)
+  end
+
   def where(*args)
     if args.count > 1
       expression = args.shift
@@ -94,7 +117,35 @@ module Selection
       when Hash
         expression_hash = BlocRecord::Utility.convert_keys(args.first)
         expression = expression_hash.map {|key, value| "#{key}=#{BlocRecord::Utility.sql_strings(value)}"}.join(" and ")
-      end      
+      end
+    end
+
+    if expression == nil 
+      puts " SQL WHERE expression can not be nil"
+      return
+    else
+      sql = <<-SQL
+        SELECT #{columns.join ","} FROM #{table}
+        WHERE #{expression};
+      SQL
+
+      rows = connection.execute(sql, params)
+      rows_to_array(rows)
+    end
+  end
+
+  def not(*args)
+    if args.count > 1
+      expression = args.shift
+      params = args
+    else
+      case args.first
+      when String
+        expression = args.first
+      when Hash
+        expression_hash = BlocRecord::Utility.convert_keys(args.first)
+        expression = expression_hash.map {|key, value| "#{key} <> #{BlocRecord::Utility.sql_strings(value)}"}.join(" and ")
+      end
     end
 
     sql = <<-SQL
@@ -104,14 +155,22 @@ module Selection
 
     rows = connection.execute(sql, params)
     rows_to_array(rows)
-  end 
-  
+  end
+
   def order(*args)
-    if args.count > 1
-      order = args.join(",")
-    else
-      order = args.first.to_s
+    orderArray = []
+    args.each do |arg|
+      case arg
+      when String
+        orderArray << arg
+      when Symbol
+        orderArray << arg.to_s
+      when Hash
+        orderArray << arg.map{|key, value| "#{key} #{value}"}
+      end
     end
+    order = orderArray.join(",")
+    puts order
 
     rows = connection.execute <<-SQL
       SELECT * FROM #{table}
@@ -137,9 +196,16 @@ module Selection
           SELECT * FROM #{table}
           INNER JOIN #{args.first} ON #{args.first}.#{table}_id = #{table}.id
         SQL
+      when Hash
+        key = args.first.keys[0]
+        value = args.first.values[0]
+        rows = connection <<-SQL
+          SELECT * FROM
+          INNER JOIN #{key} ON #{key}.#{table}_id = #{table}.id
+          INNER JOIN #{value} ON #{value}.#{key}_id = #{key}.id
+        SQL
       end
     end
-
     rows_to_array(rows)
   end
 
@@ -155,5 +221,5 @@ module Selection
     collection = BlocRecord::Collection.new
     rows.each { |row| collection << new(Hash[columns.zip(row)]) }
     collection
-  end  
+  end
 end
